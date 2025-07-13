@@ -1,1 +1,3 @@
-First commit 2
+cd in src/skincare
+run in terminal: python main.py
+Enjoy!

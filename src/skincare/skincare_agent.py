@@ -72,7 +72,7 @@ products = {
         {'name': 'Nivea Protect & Refresh Sun Lotion SPF50 PA++++ 75ml', 'brand': 'Nivea', 'link': 'https://www.mannings.com.hk/en/nivea-protect-refresh-sun-lotion-spf50-pa-75ml/p/691287', 'image': None, 'price': 68}
     ],
     'face wash': [
-        {'name': 'UL.OS Face Wash 100g', 'brand': 'Otsuka', 'link': 'https://www.mannings.com.hk/en/ul-os-face-wash-100g/p/789305', 'image': 'skincare_image/Screenshot 2025-07-13 at 12.17.50 PM.png', 'price': 88},
+        {'name': 'ULOS Face Wash 100g', 'brand': 'Otsuka', 'link': 'https://www.mannings.com.hk/en/ul-os-face-wash-100g/p/789305', 'image': '/Users/hochingsit/Desktop/Work/Votee Hackathon/bigen-skincare-dye-hackathon/skincare_image/Screenshot 2025-07-13 at 12.17.50 PM.png', 'price': 88},
         {'name': 'Curel Foaming Face Wash 150ml', 'brand': 'Curel', 'link': 'https://www.mannings.com.hk/en/curel-foaming-face-wash-150ml/p/434894', 'image': 'skincare_image/Screenshot 2025-07-13 at 12.18.44 PM.png', 'price': 150},
         {'name': 'Biore Face Wash Mild 100g', 'brand': 'Biore碧柔', 'link': 'https://www.mannings.com.hk/en/biore-face-wash-mild-100g/p/772822', 'image': 'skincare_image/Screenshot 2025-07-13 at 12.19.37 PM.png', 'price': 38.9}
     ],
