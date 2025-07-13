@@ -1,18 +1,165 @@
 import asyncio
 import base64
+import io
 import json
 import logging
 import os
 import re
-from typing import Tuple
+from typing import AsyncGenerator, List, Tuple
 
-import gradio as gr
-import google.generativeai as genai
-from google.adk.agents import LlmAgent
+from dotenv import load_dotenv
+from google.adk.agents import BaseAgent, LlmAgent
+from google.adk.agents.invocation_context import InvocationContext
+from google.adk.events import Event
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
+from google.adk.tools import google_search
 from google.genai import types
+from google.genai import types as genai_types
+import google.generativeai as genai
+import gradio as gr
 from PIL import Image
+
+
+class HaircutAgent(BaseAgent):
+    """An agent that provides haircut recommendations."""
+
+    def __init__(self):
+        super().__init__(name="haircut_agent")
+
+    async def _analyze_image(self, image_base64: str) -> str:
+        """Analyzes the user's image to describe their features."""
+        if not image_base64:
+            return "No image provided."
+        
+        analysis_model = genai.GenerativeModel('gemini-1.5-pro-latest')
+        pil_image = Image.open(io.BytesIO(base64.b64decode(image_base64)))
+
+        analysis_prompt = """
+        Analyze the uploaded image to accurately determine the user’s face shape (e.g., oval, square, round, heart, long).
+        Describe the user’s CURRENT haircut: identify its style, length, and apparent hair texture.
+        Comment on potential hair health problems visible in the image.
+        Respond in a concise paragraph.
+        """
+        response = await analysis_model.generate_content_async([analysis_prompt, pil_image])
+        
+        if response.candidates and response.candidates[0].content.parts:
+            return response.candidates[0].content.parts[0].text
+        return "Could not get a valid analysis from the model."
+
+    async def _repair_json_with_llm(self, broken_json_string: str) -> str:
+        """Uses a second LLM call to repair a broken JSON string."""
+        logger.info("Attempting to repair malformed JSON...")
+        repair_model = genai.GenerativeModel('gemini-1.5-flash-latest')
+        repair_prompt = f"""The following text is supposed to be a single JSON object, but it is malformed. Please correct any syntax errors and return ONLY the valid JSON object.
+
+Broken JSON:
+```json
+{broken_json_string}
+```"""
+        response = await repair_model.generate_content_async(
+            repair_prompt,
+            generation_config={"response_mime_type": "application/json"}
+        )
+        return response.text
+
+    async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
+        logger.info("--- Starting new haircut suggestion request ---")
+        image_base64 = ctx.session.state.get("image_base64")
+        user_message = ctx.session.state.get("user_message", "Suggest a haircut for me.")
+
+        if not image_base64:
+            content = genai_types.Content(role="model", parts=[genai_types.Part(text="I need an image to suggest a haircut.")])
+            yield Event(author=self.name, content=content)
+            return
+
+        logger.info("Step 1: Analyzing user image...")
+        image_analysis = await self._analyze_image(image_base64)
+        logger.info(f"Image analysis successful:\n{image_analysis}")
+
+        available_products_list = [f"- {prod['product_name']}: {prod['description']}" for prod in ALL_PRODUCTS_FOR_PROMPT]
+        available_products_text = "Available Products:\n" + "\n".join(available_products_list)
+        final_system_prompt = SYSTEM_PROMPT_HAIRCUT.format(available_products_text=available_products_text)
+
+        full_prompt = f"Image Analysis:\n{image_analysis}\n\nUser Preferences:\n{user_message}"
+        
+        logger.info("Step 2: Calling stylist agent for suggestions...")
+        suggestion_model = genai.GenerativeModel('gemini-1.5-pro-latest')
+        response = await suggestion_model.generate_content_async(
+            [final_system_prompt, full_prompt],
+            generation_config={"response_mime_type": "application/json"}
+        )
+        response_text = response.text
+        logger.info("--- Raw Stylist Agent Response ---")
+
+        logger.info("Step 3: Parsing agent response...")
+        data = {}
+        try:
+            data = json.loads(response_text)
+        except json.JSONDecodeError:
+            logger.warning("Initial JSON parsing failed. Attempting to repair.")
+            repaired_json_str = await self._repair_json_with_llm(response_text)
+            try:
+                data = json.loads(repaired_json_str)
+            except json.JSONDecodeError as e:
+                error_msg = f"Failed to decode JSON even after repair attempt: {e}"
+                logger.error(error_msg)
+                content = genai_types.Content(role="model", parts=[genai_types.Part(text=error_msg)])
+                yield Event(author=self.name, content=content)
+                return
+
+        # NOTE: The image paths are placeholders. You will need to create a 'haircut_images' directory
+        # and place the corresponding images there for them to render.
+        product_images = {
+            "Sebamed Baby Shampoo 500ml": "haircut_images/sebamed_shampoo.png",
+            "Moisturizing & Styling Hair Gel": "haircut_images/hair_gel.png",
+            "Nourishing Hair Lotion": "haircut_images/hair_lotion.png",
+            "Hair Styling Finishing Spray": "haircut_images/hair_spray.png",
+            "Hair Repair Conditioner": "haircut_images/hair_conditioner.png",
+            "Purifying Hair & Scalp Serum": "haircut_images/hair_serum.png",
+            "Head & Shoulders Smooth & Silky Anti-Dandruff Shampoo": "https://images.ctfassets.net/cfexf643femw/4n43yF3138f5f6o43p0YpE/8f0376c34b3ed188e0b29845ab264d2b/750-anti-dandruff-shampoo-smooth-silky.png"
+        }
+
+        # Build combined output markdown
+        final_markdown = f"## Current Hair Analysis\n{image_analysis}\n\n---\n\n"
+        final_markdown += "## Style Recommendations\n"
+        suggestions = data.get('style_suggestions', [])
+        if not suggestions:
+            final_markdown += "No style suggestions were generated."
+        else:
+            for i, sug in enumerate(suggestions, 1):
+                final_markdown += f"### Recommendation #{i}: {sug.get('style_name', 'N/A')}\n\n"
+                final_markdown += "| Feature | Details |\n"
+                final_markdown += "|---|---|\n"
+                final_markdown += f"| **Suitable Venue** | {sug.get('suitable_venue', 'N/A')} |\n"
+                final_markdown += f"| **Description** | {sug.get('description', 'N/A')} |\n"
+                final_markdown += f"| **Method** | {sug.get('method', 'N/A')} |\n"
+                final_markdown += f"| **Communication for Stylist** | {sug.get('communication_feedbacks', 'N/A')} |\n"
+                final_markdown += f"| **Duration** | {sug.get('duration', 'N/A')} |\n\n"
+
+                recommended_products = sug.get('recommended_products', [])
+                if recommended_products:
+                    final_markdown += "#### Recommended Products for this Style\n\n"
+                    for prod_name in recommended_products:
+                        final_markdown += f"**{prod_name}**\n"
+                        image_path = product_images.get(prod_name)
+                        if image_path:
+                            if image_path.startswith("http"):
+                                image_uri = image_path
+                            else:
+                                image_uri = image_to_base64_uri(image_path)
+                            
+                            if image_uri:
+                                final_markdown += f"![{prod_name}]({image_uri})\n\n"
+                    final_markdown += "\n"
+                final_markdown += "---\n"
+
+        final_markdown += f"\n**General Tip:** {data.get('general_tip', 'N/A')}"
+
+        logger.info("--- Haircut suggestion request finished successfully ---")
+        content = genai_types.Content(role="model", parts=[genai_types.Part(text=final_markdown)])
+        yield Event(author=self.name, content=content)
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -75,7 +222,7 @@ ALL_PRODUCTS_FOR_PROMPT = [
 
 
 # Load environment variables from .env file
-
+load_dotenv()
 
 # Configure google-generativeai for the ADK Agent and other calls
 try:
@@ -190,7 +337,7 @@ Broken JSON:
 ```"""
 
     try:
-        model = genai.GenerativeModel('gemini-2.5-pro-preview-03-25')  # type: ignore
+        model = genai.GenerativeModel('gemini-2.5-pro')  # type: ignore
         response = await model.generate_content_async(
             repair_prompt,
             generation_config={"response_mime_type": "application/json"}

@@ -13,9 +13,9 @@ RUN mkdir /app
 WORKDIR /app
 
 COPY src/skincare /app/skincare
-COPY .env /app
-COPY main.py /app
+COPY .env /app/skincare
+WORKDIR /app/skincare
 
-EXPOSE 8000
+EXPOSE 7860
 
 ENTRYPOINT ["python", "main.py"]

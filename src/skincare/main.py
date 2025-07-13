@@ -9,6 +9,7 @@ from typing import AsyncGenerator
 
 import gradio as gr
 from dotenv import load_dotenv
+from google.adk.models.lite_llm import LiteLlm
 from google.adk.agents import SequentialAgent, LlmAgent, BaseAgent
 from google.adk.agents.invocation_context import InvocationContext
 from google.adk.events import Event
@@ -17,28 +18,22 @@ from google.adk.sessions import InMemorySessionService
 from google.genai import types
 from PIL import Image
 
-from .fashion_agent import FashionAgent
-from .image_handler import pil_image_to_base64
-from .skincare_agent import SkincareAgent
-# from .haircut_agent import HaircutAgent  # Commented out
+from fashion_agent import FashionAgent
+from haircut_agent import HaircutAgent
+from image_handler import pil_image_to_base64
+from skincare_agent import SkincareAgent
 
-  # Load environment variables from .env
+load_dotenv()  # Load environment variables from .env
 
 # Initialize agents
 skincare_agent = SkincareAgent()
 fashion_agent = FashionAgent()
-# Haircut parts: commented out for now, to be added later
-# haircut_agent = HaircutAgent()
-
-# Initialize ADK agents
-skincare_adk = SkincareAgent()
-fashion_adk = FashionAgent()
-# haircut_adk = HaircutAgent()
+haircut_agent = HaircutAgent()
 
 # Create router agent to determine analysis type
 router = LlmAgent(
     name="router",
-    model=os.environ['GEMINI_MODEL_NAME'],
+    model=LiteLlm(model="gemini/gemini-2.5-pro"),
     instruction="Based on the query and/or image, determine if it's about skincare (facial focus), fashion (full body), or haircut (hair focus). Respond with ONLY one word: 'skincare', 'fashion', or 'haircut'. Do not add any explanations or extra text.",
     output_key="agent_type"
 )
@@ -62,23 +57,22 @@ class StylistOrchestrator(BaseAgent):
             async for event in self.sub_agents[2].run_async(ctx):
                 yield event
         elif agent_type == 'haircut':
-            # Placeholder for haircut agent (to be added later)
-            yield Event(text="Haircut agent not yet implemented.")
+            logger.info(f"[{self.name}] Running haircut agent.")
+            async for event in self.sub_agents[3].run_async(ctx):
+                yield event
         else:
             logger.warning(f"[{self.name}] Unknown agent type: {agent_type}")
-            yield Event(text="Unknown analysis type.")
+            content = types.Content(role='model', parts=[types.Part(text="Unknown analysis type.")])
+            yield Event(author=self.name, content=content)
 
 orchestrator = StylistOrchestrator(
     name="stylist_orchestrator",
-    sub_agents=[router, skincare_adk, fashion_adk]
+    sub_agents=[router, skincare_agent, fashion_agent, haircut_agent]
 )
 
 # Set up ADK session and runner
 session_service = InMemorySessionService()
 runner = Runner(agent=orchestrator, app_name="ai_stylist", session_service=session_service)
-
-# Remove hard-coded API key
-# os.environ["GOOGLE_API_KEY"] = "your-google-api-key"
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -109,6 +103,8 @@ def process_image(image, agent_type):
         result = skincare_agent.analyze_face(image_base64)
     elif agent_type == "Fashion":
         result = fashion_agent.analyze_body(image_base64)
+    # elif agent_type == "Haircut":
+    #     result = haircut_agent.analyze_hair(image_base64)
     else:
         return "Invalid agent type"
     return result  # Directly return the text
@@ -141,7 +137,7 @@ async def chatbot_handler(message: str, history: list, image: object):
     image_base64 = pil_image_to_base64(image) if image else None
     user_content = user_message
     if image_base64:
-        user_content += f'<div><img src="data:image/jpeg;base64,{image_base64}" alt="User uploaded image" style="max-height: 250px;"></div>'
+        user_content += f'<div><img src="data:image/jpeg;base64,{image_base64}" alt="User uploaded image"></div>'
     history.append([user_content, thinking_indicator_html])
     yield history, "", None # Update chatbot, clear inputs
     session_id = "session_dynamic"
@@ -172,9 +168,9 @@ def clear_chat():
 
 # Updated Gradio UI without agent_dropdown
 with gr.Blocks(theme=gr.themes.Default(primary_hue="blue"), title="AI Stylist") as demo:
-    gr.Markdown("# �� AI Stylist - AI 造型師")
+    gr.Markdown("# 🤖 AI Stylist - AI 造型師")
 
-    chatbot = gr.Chatbot(label="AI Stylist Chat", height=500, avatar_images=(None, "https://i.imgur.com/18wBez3.png"), show_copy_button=True)
+    chatbot = gr.Chatbot(label="AI Stylist Chat", height=500, avatar_images=(None, "https://i.imgur.com/Ux7PvC3.png"), show_copy_button=True)
     chatbot_state = gr.State([]) # Use messages format
 
     with gr.Row():
@@ -186,7 +182,7 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue="blue"), title="AI Stylist") 
                 clear_btn = gr.Button("Clear")
 
     gr.Examples(
-        ["Analyze my skin", "Suggest outfits for this body type"],
+        ["Analyze my skin", "Suggest outfits for this body type","Analyze my hair"],
         inputs=[msg], label="Example Questions"
     )
 
@@ -207,3 +203,5 @@ with gr.Blocks(theme=gr.themes.Default(primary_hue="blue"), title="AI Stylist") 
 
     submit_btn.click(chatbot_handler, inputs=[msg, chatbot, image_input], outputs=[chatbot, msg, image_input], queue=True)
     clear_btn.click(clear_chat, None, [chatbot, msg, image_input, submit_btn, chatbot_state], queue=False)
+
+demo.launch(server_name="0.0.0.0")

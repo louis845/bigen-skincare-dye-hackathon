@@ -15,7 +15,9 @@ dependencies = [
     "python-dotenv (>=1.1.1,<2.0.0)",
     "gradio-client (>=1.10.4,<2.0.0)",
     "gradio (>=5.36.2,<6.0.0)",
-    "dspy (>=2.6.27,<3.0.0)"
+    "dspy (>=2.6.27,<3.0.0)",
+    "google-generativeai (>=0.8.5,<0.9.0)",
+    "langchain (>=0.3.26,<0.4.0)"
 ]
 
 
