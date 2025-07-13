@@ -1,0 +1,24 @@
+[project]
+name = "skincare-hackathon"
+version = "0.1.0"
+description = "Skincare"
+authors = [
+    {name = "Parker Sit",email = "parker.sit@votee.com"},
+    {name = "Louis Chau",email = "louis.chau@votee.com"},
+    {name = "Ryan Chung",email = "chunglaiyin0804@gmail.com"}
+]
+license = {text = "MIT"}
+readme = "README.md"
+requires-python = ">=3.10,<3.14"
+dependencies = [
+    "google-adk (>=1.6.1,<2.0.0)",
+    "python-dotenv (>=1.1.1,<2.0.0)",
+    "gradio-client (>=1.10.4,<2.0.0)",
+    "gradio (>=5.36.2,<6.0.0)",
+    "dspy (>=2.6.27,<3.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

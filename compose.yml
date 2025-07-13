@@ -1,0 +1,11 @@
+services:
+  main-skincare-app:
+    container_name: skincare-app
+    image: main-skincare-app:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - 80:8000

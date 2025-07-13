@@ -1,0 +1,5 @@
+google-adk 
+python-dotenv 
+dspy-ai 
+gradio-client==1.10.4 
+gradio==5.36.2
