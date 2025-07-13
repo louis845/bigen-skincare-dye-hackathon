@@ -1,0 +1,7 @@
+*.pyc
+**/__pycache__
+.env
+__MAXOSX/
+skincare_image/
+434878~1_20250526213916_1079.webp
+.DS_Store
